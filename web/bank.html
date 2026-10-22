@@ -103,6 +103,7 @@ $("dot").addEventListener("click", moveDot);
 $("b-enroll").addEventListener("click", () => {
   user = $("user").value.trim().toLowerCase();
   if (!user) return ($("status").textContent = "Enter a username first.");
+  if (timer) clearInterval(timer);
   show("v-enroll"); nextPrompt(); moveDot(); Behaviour.take();
   timer = setInterval(async () => {
     const r = await post("/api/enroll", { user, events: Behaviour.take() });
@@ -117,6 +118,7 @@ $("b-done").addEventListener("click", () => { clearInterval(timer); show("v-star
 $("b-login").addEventListener("click", async () => {
   user = $("user").value.trim().toLowerCase();
   if (!user) return ($("status").textContent = "Enter a username first.");
+  if (timer) clearInterval(timer);
   const r = await post("/api/session", { user });
   sid = r.body.session_id;
   show("v-bank"); Behaviour.take();
