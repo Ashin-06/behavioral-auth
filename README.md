@@ -45,12 +45,25 @@ The browser capture script records **timing and movement only**. For keys it sto
 
 One 15-second window is weak evidence, which is why EER per window is around 11%. Trust accumulates across windows, and that is how the session-level numbers get much higher. The simulator models real effects (minimum-jerk pointer motion, device sampling rates, remote-desktop frame pacing), but real users are messier. Calibrate on your own traffic, then tune `STEP_UP_BELOW` / `END_BELOW` in `engine.py` and the per-user threshold percentile in `profile.py`.
 
+### On real people
+
+The simulator can't tell you how real people behave, so the same identity model, with no impostor data at enrolment, is also scored on two public datasets (`python -m behavauth realdata`, results in `results/real_data.json`):
+
+| Dataset | What is scored | Result |
+|---|---|---|
+| [CMU keystroke benchmark](https://www.cs.cmu.edu/~keystroke/) (51 people, 400 typings each) | per-key timings, the paper's protocol | **8.9% EER** (the paper's scaled-Manhattan detector: 9.6%) |
+| same | the content-free class features this service actually stores, 5 typings per window | **10.3% EER** |
+| [Balabit mouse challenge](https://github.com/balabit/Mouse-Dynamics-Challenge) (10 users, 816 labelled test sessions, 405 by intruders) | is this session the account owner? mouse only | **AUC 0.72**, 32.7% EER |
+
+The keystroke model holds up on real typists, and dropping the actual keys in favour of key classes costs little. Mouse movement on its own is weak: Balabit sessions are short, recorded over remote desktop, and the model never sees intruder data. Treat the mouse signal as supporting evidence that is fused with typing and the threat rules, never as a sole identity check.
+
 ## Run it
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                  # 8 tests
+python -m pytest -q                  # 10 tests
 python -m behavauth evaluate         # benchmark -> results/
+python -m behavauth realdata --cmu DSL-StrongPasswordData.csv --balabit Mouse-Dynamics-Challenge/
 python -m behavauth seed             # fill the analyst view with example sessions
 python -m behavauth serve            # http://127.0.0.1:8007
 ```
@@ -93,6 +106,7 @@ behavauth/
   engine.py     session trust and action gating
   simulate.py   synthetic people, impostors, bots, remote takeovers, coached victims
   evaluate.py   EER curves and session decisions
+  realdata.py   scoring on the CMU keystroke and Balabit mouse datasets
   store.py      SQLite persistence
   api.py        FastAPI service
 web/            capture.js, demo bank, analyst view

@@ -1,6 +1,7 @@
 """Command line.
 
     python -m behavauth evaluate          # benchmark on simulated users -> results/
+    python -m behavauth realdata --cmu DSL-StrongPasswordData.csv --balabit Mouse-Dynamics-Challenge/
     python -m behavauth seed              # fill the analyst view with simulated sessions
     python -m behavauth serve --port 8007
 """
@@ -43,6 +44,10 @@ def main(argv=None):
     e = sub.add_parser("evaluate")
     e.add_argument("--users", type=int, default=30)
     e.add_argument("--out", default="results")
+    r = sub.add_parser("realdata", help="score the identity model on public real-world datasets")
+    r.add_argument("--cmu", help="CMU keystroke benchmark CSV (DSL-StrongPasswordData.csv)")
+    r.add_argument("--balabit", help="Balabit Mouse Dynamics Challenge checkout")
+    r.add_argument("--out", default="results/real_data.json")
     sub.add_parser("seed")
     s = sub.add_parser("serve")
     s.add_argument("--port", type=int, default=8007)
@@ -52,6 +57,19 @@ def main(argv=None):
         from .evaluate import run
 
         print(json.dumps(run(a.users, out=a.out), indent=2))
+    elif a.cmd == "realdata":
+        from pathlib import Path
+
+        from .realdata import balabit_mouse, cmu_keystroke
+
+        res = {}
+        if a.cmu:
+            res["keystroke"] = cmu_keystroke(a.cmu)
+        if a.balabit:
+            res["mouse"] = balabit_mouse(a.balabit)
+        Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+        Path(a.out).write_text(json.dumps(res, indent=2))
+        print(json.dumps(res, indent=2))
     elif a.cmd == "seed":
         seed()
     else:

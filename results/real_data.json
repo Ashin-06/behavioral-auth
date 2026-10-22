@@ -1,0 +1,19 @@
+{
+  "keystroke": {
+    "dataset": "CMU keystroke benchmark (Killourhy & Maxion 2009)",
+    "subjects": 51,
+    "per_key_timings_mean_eer": 0.089,
+    "per_key_timings_published_scaled_manhattan_eer": 0.096,
+    "class_features_5_typings_mean_eer": 0.1025,
+    "class_features_note": "content-free features the bank stores (dwell, flight, rhythm per key class)"
+  },
+  "mouse": {
+    "dataset": "Balabit Mouse Dynamics Challenge (2016)",
+    "users": 10,
+    "labelled_test_sessions_scored": 816,
+    "intruder_sessions": 405,
+    "median_windows_per_test_session": 15.0,
+    "session_auc": 0.7173,
+    "session_eer": 0.3272
+  }
+}
