@@ -49,7 +49,7 @@ One 15-second window is weak evidence, which is why EER per window is around 11%
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                  # 7 tests
+python -m pytest -q                  # 8 tests
 python -m behavauth evaluate         # benchmark -> results/
 python -m behavauth seed             # fill the analyst view with example sessions
 python -m behavauth serve            # http://127.0.0.1:8007
@@ -77,6 +77,11 @@ python -m behavauth serve            # http://127.0.0.1:8007
 | `GET /api/sessions` | analyst feed |
 
 Profiles and session logs are stored in SQLite (`BEHAVAUTH_DB`, default `data/behavauth.db`).
+
+| Setting | Purpose |
+|---|---|
+| `BEHAVAUTH_API_KEY` | require this value in an `X-API-Key` header on every `/api` call (set it when your backend relays browser events) |
+| `BEHAVAUTH_SESSION_IDLE_S` | drop monitoring sessions idle for longer than this (default 7200 s) |
 
 ## Layout
 

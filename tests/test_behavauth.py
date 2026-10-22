@@ -89,3 +89,23 @@ def test_api_flow(tmp_path, monkeypatch):
     assert a["action"] == "block"
     assert c.post(f"/api/session/{sid}/action", json={"kind": "transfer", "amount": 5000}).json()["decision"] == "deny"
     assert c.get("/api/sessions").json()[0]["timeline"]
+
+
+def test_api_key_and_idle_expiry(tmp_path, monkeypatch):
+    monkeypatch.setenv("BEHAVAUTH_DB", str(tmp_path / "k.db"))
+    monkeypatch.setenv("BEHAVAUTH_API_KEY", "s3cret")
+    monkeypatch.setenv("BEHAVAUTH_SESSION_IDLE_S", "0")
+    import importlib
+
+    import behavauth.api as api
+
+    importlib.reload(api)
+    c = TestClient(api.app)
+    assert c.post("/api/session", json={"user": "x"}).status_code == 401
+    h = {"X-API-Key": "s3cret"}
+    sid = c.post("/api/session", json={"user": "x"}, headers=h).json()["session_id"]
+    c.post("/api/session", json={"user": "y"}, headers=h)  # starting another session prunes idle ones
+    assert c.post(f"/api/session/{sid}/action", json={"kind": "view"}, headers=h).status_code == 404
+    monkeypatch.delenv("BEHAVAUTH_API_KEY")
+    monkeypatch.delenv("BEHAVAUTH_SESSION_IDLE_S")
+    importlib.reload(api)
