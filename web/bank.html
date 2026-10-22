@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Behaviour Guard Demo</title>
+<style>
+  :root { --bg:#f3f5f8; --card:#fff; --ink:#131820; --muted:#5f6977; --line:#dfe3e9; --accent:#1d5fd6;
+          --ok:#12805c; --warn:#b06a00; --bad:#c62828; --chip:#eef1f5; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0d1014; --card:#161b21; --ink:#e7ebf0; --muted:#98a2af; --line:#29303a; --accent:#6a9bff;
+            --ok:#3ccf95; --warn:#f0a840; --bad:#ff6b6b; --chip:#1f262e; }
+  }
+  * { box-sizing:border-box; }
+  a { color:inherit; }
+  body { margin:0; font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:14px 20px; background:var(--card); border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:center; }
+  header b { font-size:17px; flex:1; }
+  main { max-width:1100px; margin:0 auto; padding:18px 16px; display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:16px; }
+  @media (max-width: 860px) { main { grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; }
+  h2 { margin:0 0 12px; font-size:17px; }
+  label { display:block; font-size:13px; color:var(--muted); margin-top:10px; }
+  input { width:100%; padding:9px 11px; font:inherit; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); }
+  button { font:inherit; font-weight:600; border:0; border-radius:8px; padding:9px 16px; cursor:pointer; background:var(--accent); color:#fff; margin-top:14px; }
+  button.ghost { background:var(--chip); color:var(--ink); }
+  .row { display:flex; gap:10px; flex-wrap:wrap; }
+  .row > * { flex:1; min-width:140px; }
+  .muted { color:var(--muted); font-size:13px; }
+  .prompt { font-size:18px; padding:12px; background:var(--chip); border-radius:8px; margin:10px 0; }
+  .bar { height:8px; background:var(--chip); border-radius:4px; overflow:hidden; margin-top:12px; }
+  .bar i { display:block; height:100%; width:0; background:var(--accent); transition:width .3s; }
+  #arena { position:relative; height:220px; border:1px dashed var(--line); border-radius:10px; margin-top:12px; }
+  #dot { position:absolute; width:26px; height:26px; border-radius:50%; background:var(--accent); cursor:pointer; }
+  .gauge { font-size:42px; font-weight:800; }
+  .allow { color:var(--ok); } .step_up, .hold { color:var(--warn); } .block, .deny { color:var(--bad); }
+  ul { padding-left:18px; margin:6px 0; } li { font-size:13px; }
+  [hidden] { display:none !important; }
+  .decision { margin-top:12px; padding:12px; border-radius:8px; background:var(--chip); }
+</style>
+</head>
+<body>
+<header><b>Northwind Bank · behaviour guard demo</b><a class="muted" href="/analyst">analyst view →</a></header>
+<main>
+  <section>
+    <div class="card" id="v-start">
+      <h2>Who are you?</h2>
+      <label for="user">Username</label><input id="user" name="username" autocomplete="off" placeholder="e.g. priya">
+      <div class="row"><button id="b-enroll" class="ghost">Teach it my behaviour (2 min)</button><button id="b-login">Sign in</button></div>
+      <p class="muted" id="status"></p>
+    </div>
+
+    <div class="card" id="v-enroll" hidden>
+      <h2>Learning how you type and move</h2>
+      <p class="muted">Type each sentence in the box, then click the moving dot a few times. Behave naturally.</p>
+      <div class="prompt" id="prompt"></div>
+      <input id="practice" name="practice" autocomplete="off">
+      <div id="arena"><div id="dot"></div></div>
+      <div class="bar"><i id="progress"></i></div>
+      <p class="muted" id="enroll-status">0 samples</p>
+      <button id="b-done" hidden>Done, go to sign in</button>
+    </div>
+
+    <div class="card" id="v-bank" hidden>
+      <h2>Send money</h2>
+      <p class="muted">Balance ₹2,45,000 · Savings XX7812</p>
+      <div class="row"><div><label for="payee">Payee name</label><input id="payee" name="payee" autocomplete="off"></div>
+        <div><label for="account">Account number</label><input id="account" name="account" autocomplete="off"></div></div>
+      <div class="row"><div><label for="ifsc">IFSC</label><input id="ifsc" name="ifsc" autocomplete="off"></div>
+        <div><label for="amount">Amount (₹)</label><input id="amount" name="amount" inputmode="decimal" autocomplete="off"></div></div>
+      <label for="note">Note</label><input id="note" name="note" autocomplete="off">
+      <button id="b-send">Send money</button>
+      <div class="decision" id="decision" hidden></div>
+    </div>
+  </section>
+
+  <aside class="card">
+    <h2>Behaviour monitor</h2>
+    <p class="muted">Shown for the demo; in production this runs silently.</p>
+    <div class="gauge" id="trust">—</div>
+    <div id="action" class="muted">waiting for activity</div>
+    <div id="detail" class="muted"></div>
+    <ul id="reasons"></ul>
+  </aside>
+</main>
+<script src="/static/capture.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const post = (url, body) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(async (r) => ({ ok: r.ok, body: await r.json() }));
+const show = (v) => ["v-start", "v-enroll", "v-bank"].forEach((id) => ($(id).hidden = id !== v));
+let user = "", sid = null, timer = null;
+
+const SENTENCES = ["the quick brown fox jumps over the lazy dog", "please transfer the rent before the fifth",
+  "my account number ends with four two one nine", "pack my box with five dozen liquor jugs",
+  "send 2500 to rohan for the concert tickets", "how vexingly quick daft zebras jump"];
+let si = 0;
+function nextPrompt() { $("prompt").textContent = SENTENCES[si++ % SENTENCES.length]; $("practice").value = ""; }
+$("practice").addEventListener("input", () => { if ($("practice").value.trim() === $("prompt").textContent) nextPrompt(); });
+function moveDot() { const a = $("arena").getBoundingClientRect(); $("dot").style.left = Math.random() * (a.width - 30) + "px"; $("dot").style.top = Math.random() * (a.height - 30) + "px"; }
+$("dot").addEventListener("click", moveDot);
+
+$("b-enroll").addEventListener("click", () => {
+  user = $("user").value.trim().toLowerCase();
+  if (!user) return ($("status").textContent = "Enter a username first.");
+  show("v-enroll"); nextPrompt(); moveDot(); Behaviour.take();
+  timer = setInterval(async () => {
+    const r = await post("/api/enroll", { user, events: Behaviour.take() });
+    if (!r.ok) return ($("enroll-status").textContent = r.body.detail);
+    $("progress").style.width = Math.min(100, (r.body.windows / r.body.needed) * 100) + "%";
+    $("enroll-status").textContent = `${r.body.windows} samples · ${r.body.ready ? "profile ready" : `${r.body.needed - r.body.windows} more needed`}`;
+    $("b-done").hidden = !r.body.ready;
+  }, 15000);
+});
+$("b-done").addEventListener("click", () => { clearInterval(timer); show("v-start"); $("status").textContent = "Profile saved. Now sign in."; });
+
+$("b-login").addEventListener("click", async () => {
+  user = $("user").value.trim().toLowerCase();
+  if (!user) return ($("status").textContent = "Enter a username first.");
+  const r = await post("/api/session", { user });
+  sid = r.body.session_id;
+  show("v-bank"); Behaviour.take();
+  $("action").textContent = r.body.profile_ready ? "monitoring against your profile" : "no profile yet: only bot / remote-control checks";
+  timer = setInterval(async () => {
+    const res = await post(`/api/session/${sid}/events`, { events: Behaviour.take() });
+    if (!res.ok) return;
+    const a = res.body;
+    $("trust").textContent = Math.round(a.trust * 100);
+    $("trust").className = "gauge " + a.action;
+    $("action").innerHTML = `<span class="${a.action}">${a.action.replace("_", " ")}</span>` + (a.match === null ? "" : ` · match ${a.match.toFixed(2)}`);
+    $("detail").textContent = Object.entries(a.detail).map(([k, v]) => `${k} ${v.match.toFixed(2)}`).join(" · ");
+    $("reasons").innerHTML = a.reasons.map((x) => `<li>${esc(x)}</li>`).join("");
+  }, 10000);
+});
+
+$("b-send").addEventListener("click", async () => {
+  const r = await post(`/api/session/${sid}/action`, { kind: "transfer", amount: parseFloat($("amount").value) || 0 });
+  $("decision").hidden = false;
+  $("decision").innerHTML = `<b class="${r.body.decision}">${r.body.decision.replace("_", " ").toUpperCase()}</b> · ${esc(r.body.why)}`;
+});
+</script>
+</body>
+</html>

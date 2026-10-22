@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session Analyst</title>
+<style>
+  :root { --bg:#f3f5f8; --card:#fff; --ink:#131820; --muted:#5f6977; --line:#dfe3e9; --ok:#12805c; --warn:#b06a00; --bad:#c62828; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0d1014; --card:#161b21; --ink:#e7ebf0; --muted:#98a2af; --line:#29303a; --ok:#3ccf95; --warn:#f0a840; --bad:#ff6b6b; } }
+  a { color:inherit; }
+  body { margin:0; font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--ink); }
+  main { max-width:1100px; margin:0 auto; padding:20px 16px; }
+  h1 { font-size:20px; margin:0 0 14px; }
+  .s { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:10px; display:grid; grid-template-columns:180px 160px 1fr; gap:14px; align-items:center; }
+  @media (max-width: 760px) { .s { grid-template-columns:1fr; } }
+  .muted { color:var(--muted); font-size:12px; }
+  .allow { color:var(--ok); } .step_up { color:var(--warn); } .block { color:var(--bad); }
+  svg { width:160px; height:40px; }
+  ul { margin:0; padding-left:16px; font-size:13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Sessions <span class="muted">(refreshes every 5 s) · <a href="/">demo bank</a></span></h1>
+  <div id="list"></div>
+</main>
+<script>
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function spark(tl) {
+  if (!tl.length) return "";
+  const pts = tl.map((w, i) => `${(i / Math.max(tl.length - 1, 1)) * 156 + 2},${38 - w.trust * 36}`).join(" ");
+  return `<svg viewBox="0 0 160 40"><line x1="0" x2="160" y1="${38 - 0.55 * 36}" y2="${38 - 0.55 * 36}" stroke="currentColor" stroke-dasharray="3 3" opacity=".3"/>
+    <polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
+}
+async function load() {
+  const rows = await (await fetch("/api/sessions")).json();
+  document.getElementById("list").innerHTML = rows.map((s) => {
+    const reasons = [...new Set(s.timeline.flatMap((w) => w.reasons))].slice(0, 5);
+    return `<div class="s"><div><b>${esc(s.user)}</b><div class="muted">${new Date(s.started * 1000).toLocaleString()} · ${s.timeline.length} windows</div>
+      <div class="${s.action || ""}">${s.action ? s.action.replace("_", " ") : "no activity"} ${s.trust === null ? "" : "· trust " + Math.round(s.trust * 100)}</div></div>
+      <div class="${s.action || ""}">${spark(s.timeline)}</div>
+      <ul>${reasons.map((r) => `<li>${esc(r)}</li>`).join("") || '<li class="muted">nothing unusual</li>'}</ul></div>`;
+  }).join("") || '<p class="muted">No sessions yet.</p>';
+}
+load(); setInterval(load, 5000);
+</script>
+</body>
+</html>
