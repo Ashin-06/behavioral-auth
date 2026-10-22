@@ -1,0 +1,41 @@
+{
+  "users": 30,
+  "eer": {
+    "keystroke": 0.18333333333333335,
+    "mouse": 0.14066573556797024,
+    "fused": 0.10694444444444443
+  },
+  "sessions": {
+    "genuine": {
+      "allow": 0.9,
+      "step_up": 0.1,
+      "hold": 0.0,
+      "deny": 0.0
+    },
+    "impostor": {
+      "allow": 0.1,
+      "step_up": 0.13333333333333333,
+      "hold": 0.0,
+      "deny": 0.7666666666666667
+    },
+    "bot": {
+      "allow": 0.0,
+      "step_up": 0.0,
+      "hold": 0.0,
+      "deny": 1.0
+    },
+    "rat": {
+      "allow": 0.0,
+      "step_up": 0.0,
+      "hold": 0.0,
+      "deny": 1.0
+    },
+    "coached": {
+      "allow": 0.03333333333333333,
+      "step_up": 0.06666666666666667,
+      "hold": 0.5,
+      "deny": 0.4
+    }
+  },
+  "impostor_median_seconds_to_flag": 15.0
+}
