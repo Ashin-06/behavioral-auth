@@ -33,7 +33,11 @@ function spark(tl) {
     <polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
 }
 async function load() {
-  const rows = await (await fetch("/api/sessions")).json();
+  const send = () => fetch("/api/sessions", { headers: sessionStorage.getItem("apiKey") ? { "x-api-key": sessionStorage.getItem("apiKey") } : {} });
+  let r = await send();
+  if (r.status === 401) { sessionStorage.setItem("apiKey", prompt("API key (analyst role)") || ""); r = await send(); }
+  const rows = await r.json();
+  if (!r.ok) { document.getElementById("list").textContent = rows.detail || "not allowed"; return; }
   document.getElementById("list").innerHTML = rows.map((s) => {
     const reasons = [...new Set(s.timeline.flatMap((w) => w.reasons))].slice(0, 5);
     return `<div class="s"><div><b>${esc(s.user)}</b><div class="muted">${new Date(s.started * 1000).toLocaleString()} · ${s.timeline.length} windows</div>

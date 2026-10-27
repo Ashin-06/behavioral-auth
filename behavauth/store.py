@@ -1,67 +1,70 @@
-"""SQLite persistence for enrollment windows and session logs."""
+"""Persistence for enrollment windows and session logs: SQLite or Postgres (db.py)."""
 from __future__ import annotations
 
 import json
-import sqlite3
 import threading
 import time
-from pathlib import Path
 
+from sqlalchemy import text
+from sqlalchemy.engine import Engine
+
+from . import db
 from .profile import Profile
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS enrollment (user TEXT, created REAL, features TEXT);
-CREATE INDEX IF NOT EXISTS enrollment_user ON enrollment(user);
-CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, user TEXT, started REAL, last_trust REAL, last_action TEXT);
-CREATE TABLE IF NOT EXISTS windows (session_id TEXT, t REAL, trust REAL, match REAL, action TEXT, reasons TEXT);
-"""
 
 
 class Store:
-    def __init__(self, path: str | Path = "data/behavauth.db"):
-        if str(path) != ":memory:":
-            Path(path).parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(str(path), check_same_thread=False)
-        self.db.executescript(SCHEMA)
+    def __init__(self, url_or_engine: str | Engine = "sqlite://"):
+        self.db = db.connect(url_or_engine) if isinstance(url_or_engine, str) else url_or_engine
         self.lock = threading.Lock()
-        self._profiles: dict[str, Profile] = {}
+        self._profiles: dict[str, tuple[int, Profile]] = {}  # user -> (enrollment count it was fitted on, profile)
 
     def enroll(self, user: str, features: dict) -> int:
-        with self.lock:
-            self.db.execute("INSERT INTO enrollment VALUES (?,?,?)", (user, time.time(), json.dumps(features)))
-            self.db.commit()
-            self._profiles.pop(user, None)
+        with self.db.begin() as c:
+            c.execute(text('INSERT INTO enrollment ("user", created, features) VALUES (:u, :t, :f)'),
+                      {"u": user, "t": time.time(), "f": json.dumps(features)})
         return self.enrollment_count(user)
 
     def enrollment_count(self, user: str) -> int:
-        return self.db.execute("SELECT COUNT(*) FROM enrollment WHERE user=?", (user,)).fetchone()[0]
+        with self.db.connect() as c:
+            return c.execute(text('SELECT COUNT(*) FROM enrollment WHERE "user" = :u'), {"u": user}).scalar_one()
 
     def profile(self, user: str) -> Profile | None:
-        if user in self._profiles:
-            return self._profiles[user]
-        rows = [json.loads(r[0]) for r in self.db.execute("SELECT features FROM enrollment WHERE user=? ORDER BY created DESC LIMIT 200", (user,))]
+        """Refitted whenever the user has new enrollment windows, here or on another replica."""
+        n = self.enrollment_count(user)
+        cached = self._profiles.get(user)
+        if cached and cached[0] == n:
+            return cached[1]
+        with self.db.connect() as c:
+            rows = [json.loads(r[0]) for r in c.execute(
+                text('SELECT features FROM enrollment WHERE "user" = :u ORDER BY created DESC LIMIT 200'), {"u": user})]
         p = Profile(user, rows)
         if len(rows) >= 6:
             p.fit()
-        self._profiles[user] = p
+        with self.lock:
+            self._profiles[user] = (n, p)
         return p
 
     def start_session(self, sid: str, user: str) -> None:
-        with self.lock:
-            self.db.execute("INSERT OR REPLACE INTO sessions VALUES (?,?,?,?,?)", (sid, user, time.time(), None, None))
-            self.db.commit()
+        with self.db.begin() as c:
+            c.execute(text('INSERT INTO sessions (id, "user", started) VALUES (:id, :u, :t)'),
+                      {"id": sid, "u": user, "t": time.time()})
 
     def log(self, sid: str, a) -> None:
-        with self.lock:
-            self.db.execute("INSERT INTO windows VALUES (?,?,?,?,?,?)", (sid, time.time(), a.trust, a.match, a.action, json.dumps(a.reasons)))
-            self.db.execute("UPDATE sessions SET last_trust=?, last_action=? WHERE id=?", (a.trust, a.action, sid))
-            self.db.commit()
+        with self.db.begin() as c:
+            c.execute(text("INSERT INTO windows (session_id, t, trust, match, action, reasons) "
+                           "VALUES (:s, :t, :trust, :m, :a, :r)"),
+                      {"s": sid, "t": time.time(), "trust": a.trust, "m": a.match, "a": a.action, "r": json.dumps(a.reasons)})
+            c.execute(text("UPDATE sessions SET last_trust = :trust, last_action = :a WHERE id = :s"),
+                      {"trust": a.trust, "a": a.action, "s": sid})
 
     def sessions(self, limit: int = 50) -> list[dict]:
         out = []
-        for sid, user, started, trust, action in self.db.execute(
-                "SELECT id, user, started, last_trust, last_action FROM sessions ORDER BY started DESC LIMIT ?", (limit,)):
-            tl = [{"t": t, "trust": tr, "match": m, "action": ac, "reasons": json.loads(r)} for t, tr, m, ac, r in
-                  self.db.execute("SELECT t, trust, match, action, reasons FROM windows WHERE session_id=? ORDER BY t", (sid,))]
-            out.append({"id": sid, "user": user, "started": started, "trust": trust, "action": action, "timeline": tl})
+        with self.db.connect() as c:
+            rows = c.execute(text('SELECT id, "user", started, last_trust, last_action FROM sessions '
+                                  "ORDER BY started DESC LIMIT :n"), {"n": limit}).all()
+            for sid, user, started, trust, action in rows:
+                tl = [{"t": t, "trust": tr, "match": m, "action": ac, "reasons": json.loads(r)} for t, tr, m, ac, r in
+                      c.execute(text("SELECT t, trust, match, action, reasons FROM windows WHERE session_id = :s ORDER BY t"),
+                                {"s": sid})]
+                out.append({"id": sid, "user": user, "started": started, "trust": trust, "action": action, "timeline": tl})
         return out

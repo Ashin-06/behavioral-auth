@@ -87,7 +87,13 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const post = (url, body) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(async (r) => ({ ok: r.ok, body: await r.json() }));
+// In production the bank's back end relays these calls with its own key; for a demo against a keyed service, ask once per tab.
+const post = async (url, body) => {
+  const send = () => fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...(sessionStorage.getItem("apiKey") ? { "x-api-key": sessionStorage.getItem("apiKey") } : {}) }, body: JSON.stringify(body) });
+  let r = await send();
+  if (r.status === 401) { sessionStorage.setItem("apiKey", prompt("API key for this service") || ""); r = await send(); }
+  return { ok: r.ok, body: await r.json() };
+};
 const show = (v) => ["v-start", "v-enroll", "v-bank"].forEach((id) => ($(id).hidden = id !== v));
 let user = "", sid = null, timer = null;
 

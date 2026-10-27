@@ -1,10 +1,13 @@
 """Behavioural authentication service.
 
-    uvicorn behavauth.api:app --port 8007
+    python -m behavauth serve            # settings: BEHAVAUTH_* environment variables
+
+Enrollments and session logs are in the database. A live session's trust score is kept
+in this process: after a restart, or on another replica, the client starts a new
+session, and sensitive actions step up until enough behaviour has been seen again.
 """
 from __future__ import annotations
 
-import hmac
 import os
 import threading
 import time
@@ -13,28 +16,25 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Literal
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from . import ops
 from .engine import Session
 from .features import window_features
 from .profile import MIN_WINDOWS
 from .store import Store
 
 ROOT = Path(__file__).resolve().parent.parent
-store = Store(os.environ.get("BEHAVAUTH_DB", ROOT / "data" / "behavauth.db"))
+settings = ops.load_settings()
+ops.setup_logging(settings.log_level)
+store = Store(settings.database_url)
 live: dict[str, Session] = {}
 last_seen: dict[str, float] = {}
 SESSION_IDLE_S = float(os.environ.get("BEHAVAUTH_SESSION_IDLE_S", 2 * 3600))
-API_KEY = os.environ.get("BEHAVAUTH_API_KEY")
-
-
-def require_key(x_api_key: str | None = Header(default=None)) -> None:
-    """Optional shared key for server-to-server use (the bank backend relays browser events)."""
-    if API_KEY and not hmac.compare_digest(x_api_key or "", API_KEY):
-        raise HTTPException(401, "missing or wrong X-API-Key")
+require_key = ops.require("score")
 
 
 def _prune(now: float) -> None:
@@ -45,7 +45,8 @@ def _prune(now: float) -> None:
 
 
 _lock = threading.Lock()
-app = FastAPI(title="Behavioural Auth", version="1.0")
+app = FastAPI(title="Behavioural Auth", version="1.0.0")
+ops.install(app, settings, {"database": lambda: store.db.connect().close()})
 app.mount("/static", StaticFiles(directory=ROOT / "web"), name="static")
 
 
@@ -74,7 +75,7 @@ class SessionIn(BaseModel):
 
 class ActionIn(BaseModel):
     kind: Literal["transfer", "add_payee", "change_phone", "view"]
-    amount: float = 0.0
+    amount: float = Field(0.0, ge=0, allow_inf_nan=False)
 
 
 def _events(b: Batch) -> list[dict]:
@@ -135,14 +136,17 @@ def observe(sid: str, body: Batch):
     with _lock:
         a = s.observe(_events(body))
     store.log(sid, a)
+    ops.DECISIONS.labels(decision=f"window_{a.action}").inc()
     return asdict(a)
 
 
 @app.post("/api/session/{sid}/action", dependencies=[Depends(require_key)])
 def action(sid: str, body: ActionIn):
-    return _get(sid).gate(body.kind, body.amount)
+    out = _get(sid).gate(body.kind, body.amount)
+    ops.DECISIONS.labels(decision=f"action_{out['decision']}").inc()
+    return out
 
 
-@app.get("/api/sessions", dependencies=[Depends(require_key)])
-def sessions(limit: int = 50):
+@app.get("/api/sessions", dependencies=[Depends(ops.require("review"))])
+def sessions(limit: int = Query(50, ge=1)):
     return store.sessions(min(limit, 200))

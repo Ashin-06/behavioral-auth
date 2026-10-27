@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
@@ -70,7 +72,7 @@ def test_session_gating(world):
 
 
 def test_api_flow(tmp_path, monkeypatch):
-    monkeypatch.setenv("BEHAVAUTH_DB", str(tmp_path / "t.db"))
+    monkeypatch.setenv("BEHAVAUTH_DB", str(tmp_path / "t.db"))  # the older setting still names the database file
     import importlib
 
     import behavauth.api as api
@@ -93,7 +95,7 @@ def test_api_flow(tmp_path, monkeypatch):
 
 def test_api_key_and_idle_expiry(tmp_path, monkeypatch):
     monkeypatch.setenv("BEHAVAUTH_DB", str(tmp_path / "k.db"))
-    monkeypatch.setenv("BEHAVAUTH_API_KEY", "s3cret")
+    monkeypatch.setenv("BEHAVAUTH_API_KEYS", json.dumps({"s3cret": {"user": "bank", "role": "bank_backend"}}))
     monkeypatch.setenv("BEHAVAUTH_SESSION_IDLE_S", "0")
     import importlib
 
@@ -106,6 +108,6 @@ def test_api_key_and_idle_expiry(tmp_path, monkeypatch):
     sid = c.post("/api/session", json={"user": "x"}, headers=h).json()["session_id"]
     c.post("/api/session", json={"user": "y"}, headers=h)  # starting another session prunes idle ones
     assert c.post(f"/api/session/{sid}/action", json={"kind": "view"}, headers=h).status_code == 404
-    monkeypatch.delenv("BEHAVAUTH_API_KEY")
+    monkeypatch.delenv("BEHAVAUTH_API_KEYS")
     monkeypatch.delenv("BEHAVAUTH_SESSION_IDLE_S")
     importlib.reload(api)
