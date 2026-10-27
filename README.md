@@ -61,11 +61,19 @@ The keystroke model holds up on real typists, and dropping the actual keys in fa
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                  # 10 tests
+python -m pytest -q                  # 33 tests
 python -m behavauth evaluate         # benchmark -> results/
 python -m behavauth realdata --cmu DSL-StrongPasswordData.csv --balabit Mouse-Dynamics-Challenge/
 python -m behavauth seed             # fill the analyst view with example sessions
-python -m behavauth serve            # http://127.0.0.1:8007
+python -m behavauth serve            # http://127.0.0.1:8007 (demo mode, no keys)
+```
+
+In a container (production mode; see [docs/runbook.md](docs/runbook.md)):
+
+```bash
+docker build -t behavioral-auth:1.0.0 .
+python -m behavauth.ops keygen       # an API key with its hash
+docker run -p 8007:8007 -v behavauth-data:/data -e BEHAVAUTH_KEYS_FILE=/run/secrets/behavauth-keys.json behavioral-auth:1.0.0
 ```
 
 - **http://127.0.0.1:8007**: a demo bank.
@@ -88,13 +96,17 @@ python -m behavauth serve            # http://127.0.0.1:8007
 | `POST /api/session/{id}/events` | `{events}`: returns trust, match, action, flags, reasons |
 | `POST /api/session/{id}/action` | `{kind, amount}`: allow / step_up / hold / deny with reason |
 | `GET /api/sessions` | analyst feed |
+| `GET /healthz`, `/readyz`, `/metrics` | liveness, readiness (database), Prometheus metrics (role `monitor`) |
 
-Profiles and session logs are stored in SQLite (`BEHAVAUTH_DB`, default `data/behavauth.db`).
+Profiles and session logs are stored in SQLite or Postgres (`BEHAVAUTH_DATABASE_URL`; the older `BEHAVAUTH_DB` file path still works, and its database upgrades in place). The default in development is `data/behavauth.db`. A live session's trust score is kept in the process that started it: after a restart, or on another replica, the client starts a new session, and sensitive actions step up until enough behaviour has been seen again. Run one replica or sticky sessions.
 
 | Setting | Purpose |
 |---|---|
-| `BEHAVAUTH_API_KEY` | require this value in an `X-API-Key` header on every `/api` call (set it when your backend relays browser events) |
+| `BEHAVAUTH_API_KEYS` / `BEHAVAUTH_KEYS_FILE` | API keys as `{"sha256:<hex>": {"user", "role"}}`, sent as `X-API-Key` or `Authorization: Bearer`. Roles: `bank_backend` (all `/api` calls except the feed), `analyst` (`/api/sessions`), `monitor` (`/metrics`), `admin`. Without keys the service runs in demo mode on loopback only |
+| `BEHAVAUTH_ENV` | `production` refuses to start without hashed keys and a database URL |
 | `BEHAVAUTH_SESSION_IDLE_S` | drop monitoring sessions idle for longer than this (default 7200 s) |
+
+The full list is in [docs/runbook.md](docs/runbook.md). The demo pages ask for a key once when the service has keys; in production your back end relays the events with its own key.
 
 ## Layout
 
@@ -107,7 +119,8 @@ behavauth/
   simulate.py   synthetic people, impostors, bots, remote takeovers, coached victims
   evaluate.py   EER curves and session decisions
   realdata.py   scoring on the CMU keystroke and Balabit mouse datasets
-  store.py      SQLite persistence
+  store.py      SQLite / Postgres persistence (db.py, migrations/)
+  ops.py        settings, API keys and roles, limits, logs, metrics, health
   api.py        FastAPI service
 web/            capture.js, demo bank, analyst view
 ```
@@ -115,3 +128,19 @@ web/            capture.js, demo bank, analyst view
 ## Privacy
 
 Behavioural data is biometric data in many jurisdictions; India's DPDP Act treats it as personal data. Tell users about it, keep only feature vectors (this service never stores raw event streams), set a retention period, and let users reset their profile.
+
+## Production readiness
+
+**In place** (see [docs/runbook.md](docs/runbook.md), [docs/threat-model.md](docs/threat-model.md) and [docs/model-card.md](docs/model-card.md)):
+- Pinned dependencies (`requirements.lock`), `pyproject.toml`, a container image that runs as a non-root user with a health check, and CI (ruff, bandit, pip-audit, tests with coverage).
+- Production mode that refuses to start without hashed per-client API keys and a database, and no public listener without keys. `seed` (simulated users) refuses to run in production.
+- Roles on keys (the analyst feed is separate from scoring), per-client rate limits, a body size cap, security headers, CORS only for listed origins, and errors that don't echo input.
+- Enrollments and session logs in SQLite or Postgres, with numbered migrations; old `BEHAVAUTH_DB` files upgrade in place; profiles refit when another replica adds enrollment windows.
+- JSON logs with request IDs, `/healthz`, `/readyz` and Prometheus metrics, including counts of window and action decisions.
+
+**Still needed before it gates real payments**, none of which code can supply:
+- An independent security review and penetration test, including attempts to replay or synthesise a customer's behaviour. Nobody outside this project has reviewed it.
+- Validation on the bank's own customers and devices. The session numbers come from simulated users; on real data the keystroke model is close to the published benchmark, but mouse alone reaches only AUC 0.72 on Balabit.
+- RBI and DPDP Act 2023 sign-off: behavioural data is personal (in many places biometric) data, so consent, notice, a retention period, profile reset and a fairness check across ages, abilities and devices are needed.
+- Real integrations: the bank's login and step-up (device biometrics, OTP), its fraud case system for holds, and session state shared across replicas.
+- TLS and a shared rate limiter at the ingress; an on-call team with SLOs and alerting on the metrics above.
