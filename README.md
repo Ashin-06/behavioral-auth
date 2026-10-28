@@ -115,3 +115,7 @@ Behaviour data is personal data under India's DPDP Act and biometric data in man
 - The code has not had an independent security review, including attempts to replay or imitate a customer's behaviour. Real use also needs consent and a fairness check across ages, abilities and devices.
 
 See [SECURITY.md](SECURITY.md), [docs/threat-model.md](docs/threat-model.md) and [docs/model-card.md](docs/model-card.md).
+
+## License
+
+MIT. See [LICENSE](LICENSE).
