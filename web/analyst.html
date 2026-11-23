@@ -40,9 +40,9 @@ async function load() {
   if (!r.ok) { document.getElementById("list").textContent = rows.detail || "not allowed"; return; }
   document.getElementById("list").innerHTML = rows.map((s) => {
     const reasons = [...new Set(s.timeline.flatMap((w) => w.reasons))].slice(0, 5);
-    return `<div class="s"><div><b>${esc(s.user)}</b><div class="muted">${new Date(s.started * 1000).toLocaleString()} · ${s.timeline.length} windows</div>
-      <div class="${s.action || ""}">${s.action ? s.action.replace("_", " ") : "no activity"} ${s.trust === null ? "" : "· trust " + Math.round(s.trust * 100)}</div></div>
-      <div class="${s.action || ""}">${spark(s.timeline)}</div>
+    return `<div class="s"><div><b>${esc(s.user)}</b><div class="muted">${esc(new Date(s.started * 1000).toLocaleString())} · ${esc(s.timeline.length)} windows</div>
+      <div class="${esc(s.action || "")}">${s.action ? esc(s.action.replace("_", " ")) : "no activity"} ${s.trust === null ? "" : "· trust " + Math.round(s.trust * 100)}</div></div>
+      <div class="${esc(s.action || "")}">${spark(s.timeline)}</div>
       <ul>${reasons.map((r) => `<li>${esc(r)}</li>`).join("") || '<li class="muted">nothing unusual</li>'}</ul></div>`;
   }).join("") || '<p class="muted">No sessions yet.</p>';
 }
