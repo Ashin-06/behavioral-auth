@@ -135,7 +135,7 @@ $("b-login").addEventListener("click", async () => {
     const a = res.body;
     $("trust").textContent = Math.round(a.trust * 100);
     $("trust").className = "gauge " + a.action;
-    $("action").innerHTML = `<span class="${a.action}">${a.action.replace("_", " ")}</span>` + (a.match === null ? "" : ` · match ${a.match.toFixed(2)}`);
+    $("action").innerHTML = `<span class="${esc(a.action)}">${esc(a.action.replace("_", " "))}</span>` + (a.match === null ? "" : ` · match ${esc(a.match.toFixed(2))}`);
     $("detail").textContent = Object.entries(a.detail).map(([k, v]) => `${k} ${v.match.toFixed(2)}`).join(" · ");
     $("reasons").innerHTML = a.reasons.map((x) => `<li>${esc(x)}</li>`).join("");
   }, 10000);
@@ -144,7 +144,7 @@ $("b-login").addEventListener("click", async () => {
 $("b-send").addEventListener("click", async () => {
   const r = await post(`/api/session/${sid}/action`, { kind: "transfer", amount: parseFloat($("amount").value) || 0 });
   $("decision").hidden = false;
-  $("decision").innerHTML = `<b class="${r.body.decision}">${r.body.decision.replace("_", " ").toUpperCase()}</b> · ${esc(r.body.why)}`;
+  $("decision").innerHTML = `<b class="${esc(r.body.decision)}">${esc(r.body.decision.replace("_", " ").toUpperCase())}</b> · ${esc(r.body.why)}`;
 });
 </script>
 </body>
